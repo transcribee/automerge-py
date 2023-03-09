@@ -1,10 +1,10 @@
 import unittest
 from automerge import doc
-from automerge_backend import Backend, decode_change
+from automerge_backend import Automerge, decode_change
 from uuid import uuid4
 
 
-class TestBackendConcurrency(unittest.TestCase):
+class TestAutomergeConcurrency(unittest.TestCase):
     def test_not_allow_request_patches_to_be_applied_out_of_order(self):
         actor = "02ef21f3c9eb4087880ebedd7c4bbe43"
         d0 = doc.Doc(initial_data={"blackbirds": 24}, actor_id=actor)
@@ -79,7 +79,7 @@ class TestBackendConcurrency(unittest.TestCase):
             },
         )
 
-        b0 = Backend()
+        b0 = Automerge()
         patch0, bin_change0 = b0.apply_local_change(change0)
 
         d0.apply_patch(patch0)
@@ -116,10 +116,10 @@ class TestBackendConcurrency(unittest.TestCase):
         doc1 = doc.Doc(initial_data={"number": 1}, actor_id=actor1)
         change1 = doc1.local_changes.pop()
 
-        b1 = Backend()
+        b1 = Automerge()
         patch1, bin_change1 = b1.apply_local_change(change1)
 
-        b2 = Backend()
+        b2 = Automerge()
         patch1a = b2.apply_changes([bin_change1])
 
         doc1a = doc.Doc(actor_id=actor2)

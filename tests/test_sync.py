@@ -1,6 +1,6 @@
 import json
 import unittest
-from automerge_backend import Backend, default_sync_state
+from automerge_backend import Automerge, default_sync_state
 from automerge import doc
 from automerge.datatypes import Counter
 
@@ -48,7 +48,7 @@ def sync(nA, nB, a_sync_state=None, b_sync_state=None):
 
 class AlreadyInSync(unittest.TestCase):
     def test_not_reply_if_we_have_no_data_as_well(self):
-        n1, n2 = doc.Doc(backend=Backend()), doc.Doc(backend=Backend())
+        n1, n2 = doc.Doc(backend=Automerge()), doc.Doc(backend=Automerge())
         s1, s2 = default_sync_state(), default_sync_state()
         m1 = m2 = None
 
@@ -60,8 +60,8 @@ class AlreadyInSync(unittest.TestCase):
 
     def test_repos_with_equal_heads_do_not_need_a_reply_message(self):
         n1, n2 = (
-            doc.Doc(backend=Backend(), timestamper=ts, initial_data={"n": []}),
-            doc.Doc(backend=Backend(), timestamper=ts),
+            doc.Doc(backend=Automerge(), timestamper=ts, initial_data={"n": []}),
+            doc.Doc(backend=Automerge(), timestamper=ts),
         )
         s1, s2 = default_sync_state(), default_sync_state()
 
@@ -82,8 +82,8 @@ class AlreadyInSync(unittest.TestCase):
 
     def test_offer_all_changes_to_n2_when_starting_from_nothing(self):
         n1, n2 = (
-            doc.Doc(backend=Backend(), timestamper=ts, initial_data={"n": []}),
-            doc.Doc(backend=Backend(), timestamper=ts),
+            doc.Doc(backend=Automerge(), timestamper=ts, initial_data={"n": []}),
+            doc.Doc(backend=Automerge(), timestamper=ts),
         )
         for i in range(0, 10):
             with n1 as d:
@@ -97,8 +97,8 @@ class AlreadyInSync(unittest.TestCase):
     # def test_sync_peers_when_one_has_commits_the_other_does_not(self):
 
     def test_work_with_prior_sync_state(self):
-        n1, n2 = doc.Doc(backend=Backend(), timestamper=ts), doc.Doc(
-            backend=Backend(), timestamper=ts
+        n1, n2 = doc.Doc(backend=Automerge(), timestamper=ts), doc.Doc(
+            backend=Automerge(), timestamper=ts
         )
         s1, s2 = default_sync_state(), default_sync_state()
 

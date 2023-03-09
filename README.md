@@ -48,7 +48,7 @@ from automerge import doc
 
 d0 = doc.Doc(initial_data={'foo': 'bar'})
 with d0 as d:
-  d0['foo'] = 'baz'
+  d['foo'] = 'baz'
 
 # Send this change to the backend
 local_change = d0.local_changes.pop()
