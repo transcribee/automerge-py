@@ -11,9 +11,12 @@ name = "automerge_backend"
 crate-type = ["cdylib"]
 
 [dependencies]
-automerge = { git = "https://github.com/automerge/automerge.git", rev = "b34b46fa1654ebf64c1beb0c8bd83323c2a55e90" }
+automerge = { git = "https://github.com/automerge/automerge.git", rev = "1425af43cdcd61295e0e65bf47fbce0076353682" }
 ouroboros = "0.15.6"
 
 [dependencies.pyo3]
 version = "0.18.1"
 features = ["extension-module"]
+
+[package.metadata.maturin]
+name = "automerge._backend"

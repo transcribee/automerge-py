@@ -29,7 +29,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "automerge"
 version = "0.3.0"
-source = "git+https://github.com/automerge/automerge.git?rev=b34b46fa1654ebf64c1beb0c8bd83323c2a55e90#b34b46fa1654ebf64c1beb0c8bd83323c2a55e90"
+source = "git+https://github.com/automerge/automerge.git?rev=1425af43cdcd61295e0e65bf47fbce0076353682#1425af43cdcd61295e0e65bf47fbce0076353682"
 dependencies = [
  "flate2",
  "fxhash",

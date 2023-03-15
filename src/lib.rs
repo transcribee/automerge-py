@@ -1,12 +1,15 @@
 use std::sync::{Arc, Mutex};
 
 use automerge::{
-    transaction::{Transactable, Transaction, UnObserved},
+    transaction::{CommitOptions, Transactable, Transaction, UnObserved},
     Automerge, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
 };
-use pyo3::exceptions::{PyException, PyIndexError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyMapping, PySequence, PySlice};
+use pyo3::{
+    exceptions::{PyException, PyIndexError, PyTypeError, PyValueError},
+    types::PyString,
+};
 
 // The document type
 // This has shared ownership between all instances of Documents with the same underlying Automerge Document.
@@ -26,11 +29,14 @@ pub struct Document {
 }
 
 impl Document {
-    fn from_doc(
-        py: Python<'_>,
-        doc: Automerge,
-    ) -> PyResult<PyObject> {
-        Document::for_subfield_inner(py, None, Arc::new(Mutex::new(Some(doc))), ObjType::Map, automerge::ROOT)
+    fn from_doc(py: Python<'_>, doc: Automerge) -> PyResult<PyObject> {
+        Document::for_subfield_inner(
+            py,
+            None,
+            Arc::new(Mutex::new(Some(doc))),
+            ObjType::Map,
+            automerge::ROOT,
+        )
     }
 
     fn for_subfield(
@@ -52,7 +58,10 @@ impl Document {
         ty: ObjType,
         obj_id: ObjId,
     ) -> PyResult<PyObject> {
-        let doc = Self { obj_id: obj_id.clone(), automerge };
+        let doc = Self {
+            obj_id: obj_id.clone(),
+            automerge,
+        };
         Ok(match ty {
             ObjType::Map | ObjType::Table => {
                 let init = PyClassInitializer::from(doc).add_subclass(Mapping);
@@ -67,10 +76,16 @@ impl Document {
                 // maybe we want three text types or so?
                 // Text for input, Text when reading and Text for Transaction?
                 let document = document.unwrap();
-                PyCell::new(py, Text {
-                    text: document.text(obj_id.clone()).map_err(AutomergeError::AutomergeError)?
-                })?.to_object(py)
-            },
+                PyCell::new(
+                    py,
+                    Text {
+                        text: document
+                            .text(obj_id.clone())
+                            .map_err(AutomergeError::AutomergeError)?,
+                    },
+                )?
+                .to_object(py)
+            }
         })
     }
 }
@@ -104,7 +119,6 @@ impl Document {
     }
 }
 
-
 // converts a automerge value to the appropriate python value
 fn read_value<'a, T: ReadDoc>(
     py: Python<'_>,
@@ -128,11 +142,13 @@ fn read_value<'a, T: ReadDoc>(
                 Int(i) => i.to_object(py),
                 Uint(i) => i.to_object(py),
                 F64(f) => f.to_object(py),
-                Counter(c) => if let Some(counter_handler) = counter_handler {
-                    counter_handler()?
-                } else {
-                    crate::Counter(c.into()).into_py(py)
-                },
+                Counter(c) => {
+                    if let Some(counter_handler) = counter_handler {
+                        counter_handler()?
+                    } else {
+                        crate::Counter(c.into()).into_py(py)
+                    }
+                }
                 // TODO(robin): this probably should become a date?
                 Timestamp(t) => t.to_object(py),
                 Boolean(b) => b.to_object(py),
@@ -269,10 +285,7 @@ impl EntriesIterator {
 // is completely faken in the .pyi files
 #[pyfunction]
 pub fn init(py: Python<'_>, _ignore: Option<&PyAny>) -> PyResult<PyObject> {
-    Document::from_doc(
-        py,
-        Automerge::new(),
-    )
+    Document::from_doc(py, Automerge::new())
 }
 
 // TODO(robin): check for Sequence. Currently returns empty iterator for sequence
@@ -290,14 +303,18 @@ pub fn entries(document: &mut Document) -> PyResult<EntriesIterator> {
 }
 
 #[pyfunction]
-pub fn transaction(py: Python<'_>, doc: &mut Document) -> PyResult<PyObject> {
+pub fn transaction(
+    py: Python<'_>,
+    doc: &mut Document,
+    message: Option<String>,
+) -> PyResult<PyObject> {
     let automerge = doc
         .automerge
         .lock()
         .unwrap()
         .take()
         .ok_or(AutomergeError::NestedTransaction)?;
-    DocumentTransaction::new(py, automerge, doc)
+    DocumentTransaction::new(py, automerge, doc, message)
 }
 
 // TODO(robin): Support observers. Currently we don't support observers
@@ -307,6 +324,7 @@ type Tx<'a> = Transaction<'a, UnObserved>;
 // To stick the transaction into a struct and export it to python we need a self referential struct
 // that holds both the document and the transaction, to guarantee the document lives atleast as long as the transaction
 #[ouroboros::self_referencing]
+#[derive(Debug)]
 struct TransactionOwningDocument {
     owner: Automerge,
     #[borrows(mut owner)]
@@ -317,15 +335,20 @@ type TransactionHolder = Option<TransactionOwningDocument>;
 
 // Python class providing bindigs to transactions. This again works similar to Document and can refer to any of the Maps or Lists inside the Automerge Document
 #[pyclass(subclass)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DocumentTransaction {
     automerge: AutomergeDocument,
     transaction: Arc<Mutex<TransactionHolder>>,
     obj_id: ObjId,
+    commit_message: Option<String>,
 }
-
 impl DocumentTransaction {
-    fn new(py: Python<'_>, automerge: Automerge, document: &Document) -> PyResult<PyObject> {
+    fn new(
+        py: Python<'_>,
+        automerge: Automerge,
+        document: &Document,
+        commit_message: Option<String>,
+    ) -> PyResult<PyObject> {
         let ty = automerge
             .object_type(document.obj_id.clone())
             .map_err(AutomergeError::AutomergeError)?;
@@ -341,6 +364,7 @@ impl DocumentTransaction {
             ))),
             ty,
             document.obj_id.clone(),
+            commit_message,
         )
     }
 
@@ -350,11 +374,13 @@ impl DocumentTransaction {
         transaction: Arc<Mutex<TransactionHolder>>,
         ty: ObjType,
         obj_id: ObjId,
+        commit_message: Option<String>,
     ) -> PyResult<PyObject> {
         let doc = Self {
             automerge,
             transaction,
             obj_id,
+            commit_message,
         };
         match ty {
             ObjType::Map | ObjType::Table => {
@@ -368,8 +394,12 @@ impl DocumentTransaction {
             ObjType::Text => {
                 let init = PyClassInitializer::from(doc).add_subclass(TextTransaction);
                 Ok(PyCell::new(py, init)?.to_object(py))
-            },
+            }
         }
+    }
+
+    fn __str__(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
@@ -405,7 +435,12 @@ impl DocumentTransaction {
         if ty.is_none() {
             tx.with_transaction_mut(|tx| {
                 let tx = tx.take().unwrap();
-                tx.commit().unwrap();
+                if let Some(msg) = &self.commit_message {
+                    tx.commit_with(CommitOptions::default().with_message(msg))
+                        .unwrap();
+                } else {
+                    tx.commit().unwrap();
+                }
             });
         }
 
@@ -425,12 +460,17 @@ impl DocumentTransaction {
 // special sub class for transactions on counters
 #[pyclass(extends=DocumentTransaction)]
 pub struct CounterTransaction {
-    prop: Prop
+    prop: Prop,
 }
 
 impl CounterTransaction {
-    fn new(py: Python<'_>, base: &DocumentTransaction, prop: impl Into<Prop>) -> PyResult<PyObject> {
-        let init = PyClassInitializer::from(base.clone()).add_subclass(CounterTransaction { prop: prop.into() });
+    fn new(
+        py: Python<'_>,
+        base: &DocumentTransaction,
+        prop: impl Into<Prop>,
+    ) -> PyResult<PyObject> {
+        let init = PyClassInitializer::from(base.clone())
+            .add_subclass(CounterTransaction { prop: prop.into() });
         Ok(PyCell::new(py, init)?.to_object(py))
     }
 }
@@ -466,7 +506,7 @@ impl MappingTransaction {
         let super_ = slf.as_mut();
         with_transaction! {super_, |tx| {
             read_value(py, tx, super_.obj_id.clone(), name, |ty, obj_id| {
-                DocumentTransaction::for_subfield(py, super_.automerge.clone(), super_.transaction.clone(), ty, obj_id)
+                DocumentTransaction::for_subfield(py, super_.automerge.clone(), super_.transaction.clone(), ty, obj_id, None)
             },
             Some(|| CounterTransaction::new(py, super_, name))
             )
@@ -525,7 +565,7 @@ impl SequenceTransaction {
             let length = tx.length(super_.obj_id.clone());
             if index < length {
                 read_value(py, tx, super_.obj_id.clone(), index, |ty, obj_id| {
-                    Ok(DocumentTransaction::for_subfield(py, super_.automerge.clone(), super_.transaction.clone(), ty, obj_id)?.into_py(py))
+                    Ok(DocumentTransaction::for_subfield(py, super_.automerge.clone(), super_.transaction.clone(), ty, obj_id, None)?.into_py(py))
                 },
                 Some(|| CounterTransaction::new(py, super_, index))
                 )
@@ -544,6 +584,10 @@ impl SequenceTransaction {
         with_transaction! {super_, |tx| {
             match index_or_slice {
                 SliceOrIndex::Index(index) => {
+                    let length = tx.length(super_.obj_id.clone());
+                    if index == length { // Setting the n+1'th item is the same as appending, so we add a dummy element
+                        tx.splice(super_.obj_id.clone(), length, 0, [ScalarValue::Null]).map_err(AutomergeError::AutomergeError)?;
+                    }
                     Ok(apply_value(tx, super_.obj_id.clone(), index, value)?)
                 },
                 SliceOrIndex::Slice(slice) => {
@@ -590,6 +634,17 @@ impl SequenceTransaction {
         with_transaction! {super_, |tx| {
             tx.delete(super_.obj_id.clone(), index).map_err(AutomergeError::AutomergeError)
         }}
+    }
+
+    fn append(mut slf: PyRefMut<'_, Self>, value: AutomergeValue<'_>) -> PyResult<()> {
+        let super_ = slf.as_mut();
+        with_transaction! {super_, |tx| {
+                let length = tx.length(super_.obj_id.clone());
+                // Setting the n+1'th item is the same as appending, so we add a dummy element
+                tx.splice(super_.obj_id.clone(), length, 0, [ScalarValue::Null]).map_err(AutomergeError::AutomergeError)?;
+                apply_value(tx, super_.obj_id.clone(), length, value)
+            }
+        }
     }
 }
 
@@ -793,9 +848,7 @@ struct Text {
 impl Text {
     #[new]
     fn new(text: String) -> Self {
-        Self {
-            text
-        }
+        Self { text }
     }
 
     fn __str__(&self) -> String {
@@ -826,12 +879,9 @@ impl From<Counter> for ScalarValue {
     }
 }
 
-
 #[pyfunction]
 pub fn fork(py: Python<'_>, doc: &Document) -> PyResult<PyObject> {
-    let new_doc = with_doc!(doc, |doc| {
-        doc.fork()
-    });
+    let new_doc = with_doc!(doc, |doc| { doc.fork() });
 
     Document::from_doc(py, new_doc)
 }
@@ -858,11 +908,10 @@ pub fn load(py: Python<'_>, bytes: &PyBytes) -> PyResult<PyObject> {
     Document::from_doc(py, new_doc)
 }
 
-
 #[pyclass]
 #[derive(Clone)]
 pub struct Change {
-    change: automerge::Change
+    change: automerge::Change,
 }
 
 #[pymethods]
@@ -870,15 +919,34 @@ impl Change {
     #[new]
     fn new(bytes: &PyBytes) -> PyResult<Self> {
         Ok(Self {
-            change: automerge::Change::from_bytes(bytes.as_bytes().to_vec()).map_err(AutomergeError::LoadChangeError)?
+            change: automerge::Change::from_bytes(bytes.as_bytes().to_vec())
+                .map_err(AutomergeError::LoadChangeError)?,
         })
     }
 
     fn bytes(&mut self, py: Python<'_>) -> Py<PyBytes> {
         PyBytes::new(py, &*self.change.bytes()).into()
     }
+
+    fn decode(&mut self, py: Python<'_>) -> PyResult<ExpandedChange> {
+        Ok(ExpandedChange {
+            change: self.change.decode(),
+        })
+    }
 }
 
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct ExpandedChange {
+    change: automerge::ExpandedChange,
+}
+
+#[pymethods]
+impl ExpandedChange {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+}
 
 #[pyfunction]
 pub fn apply_changes(doc: &mut Document, changes: &PySequence) -> PyResult<()> {
@@ -886,11 +954,13 @@ pub fn apply_changes(doc: &mut Document, changes: &PySequence) -> PyResult<()> {
         for change in changes.iter()? {
             let change = change?;
             let change = if let Ok(change) = change.downcast::<PyBytes>() {
-                automerge::Change::from_bytes(change.as_bytes().to_vec()).map_err(AutomergeError::LoadChangeError)?
+                automerge::Change::from_bytes(change.as_bytes().to_vec())
+                    .map_err(AutomergeError::LoadChangeError)?
             } else {
                 Change::extract(change)?.change
             };
-            doc.apply_changes(std::iter::once(change)).map_err(AutomergeError::AutomergeError)?;
+            doc.apply_changes(std::iter::once(change))
+                .map_err(AutomergeError::AutomergeError)?;
         }
     }))
 }
@@ -898,10 +968,11 @@ pub fn apply_changes(doc: &mut Document, changes: &PySequence) -> PyResult<()> {
 #[pyfunction]
 pub fn get_last_local_change(doc: &Document) -> PyResult<Option<Change>> {
     Ok(with_doc!(doc, |doc| {
-        doc.get_last_local_change().map(|change| Change { change: change.clone() })
+        doc.get_last_local_change().map(|change| Change {
+            change: change.clone(),
+        })
     }))
 }
-
 
 #[derive(Debug)]
 pub enum AutomergeError {
@@ -941,7 +1012,7 @@ impl From<AutomergeError> for PyErr {
 // }
 
 #[pymodule]
-fn automerge_backend(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _backend(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Document>()?;
     m.add_class::<Mapping>()?;
     m.add_class::<Sequence>()?;
