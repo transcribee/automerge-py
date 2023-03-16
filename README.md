@@ -16,6 +16,10 @@ source ./env/bin/activate
 maturin develop
 ```
 
+## Design
+These bindings follow a different philosophy from the javascript and old python bindings.
+Instead of maintaining two separate document, one on the "rust side" and one on the other language side, the only exists on the "rust side" and bindings are written for the rust API so that python is able to access these bindings in a pythonic way.
+
 ## Usage
 
 See `test.py`
