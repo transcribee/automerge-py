@@ -439,7 +439,7 @@ impl DocumentTransaction {
                     tx.commit_with(CommitOptions::default().with_message(msg))
                         .unwrap();
                 } else {
-                    tx.commit().unwrap();
+                    tx.commit();
                 }
             });
         }
