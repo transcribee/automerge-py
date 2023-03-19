@@ -1,8 +1,9 @@
 [package]
 name = "automerge-python"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Alex Good <alex@memoryandthought.me>"]
 edition = "2018"
+rust-version = "1.65.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,8 +12,11 @@ name = "automerge_backend"
 crate-type = ["cdylib"]
 
 [dependencies]
-automerge = { git = "https://github.com/automerge/automerge.git", rev = "1425af43cdcd61295e0e65bf47fbce0076353682" }
+automerge = { git = "https://github.com/transcribee/automerge.git", rev = "d55ebc9d6572c214e4ce76eb65dcefec9119c33d" }
 ouroboros = "0.15.6"
+pyo3-log = "*"
+log = "*"
+tracing-subscriber = "0.3"
 
 [dependencies.pyo3]
 version = "0.18.1"

@@ -4,12 +4,15 @@ use automerge::{
     transaction::{CommitOptions, Transactable, Transaction, UnObserved},
     Automerge, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
 };
+use log;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyMapping, PySequence, PySlice};
 use pyo3::{
     exceptions::{PyException, PyIndexError, PyTypeError, PyValueError},
     types::PyString,
 };
+use pyo3_log;
+use tracing_subscriber;
 
 // The document type
 // This has shared ownership between all instances of Documents with the same underlying Automerge Document.
@@ -115,6 +118,11 @@ impl Document {
     fn __len__(&self) -> PyResult<usize> {
         with_doc! {self, |doc| {
             Ok(doc.length(self.obj_id.clone()))
+        }}
+    }
+    fn dump(&self) -> PyResult<()> {
+        with_doc! {self, |doc| {
+            Ok(doc.dump())
         }}
     }
 }
@@ -758,7 +766,7 @@ macro_rules! match_value {
     }
 }
 
-#[derive(FromPyObject)]
+#[derive(FromPyObject, Debug)]
 struct PyBytesNT<'a>(&'a PyBytes);
 
 impl<'a> From<PyBytesNT<'a>> for ScalarValue {
@@ -769,7 +777,7 @@ impl<'a> From<PyBytesNT<'a>> for ScalarValue {
 
 // TODO(robin): allow arbitrary things and use .__dict__?
 // These are the values we support for conversion into Automerge values
-#[derive(FromPyObject)]
+#[derive(Debug, FromPyObject)]
 enum AutomergeValue<'a> {
     Boolean(bool),
     Str(&'a str),
@@ -840,6 +848,7 @@ struct Unknown {
 
 // special class for the automerge Text value which is basically a List that only supports unicode codepoints as values
 #[pyclass]
+#[derive(Debug)]
 struct Text {
     text: String,
 }
@@ -1013,6 +1022,8 @@ impl From<AutomergeError> for PyErr {
 
 #[pymodule]
 fn _backend(_py: Python, m: &PyModule) -> PyResult<()> {
+    tracing_subscriber::fmt::init();
+
     m.add_class::<Document>()?;
     m.add_class::<Mapping>()?;
     m.add_class::<Sequence>()?;
