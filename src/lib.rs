@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use automerge::{
     transaction::{CommitOptions, Transactable, Transaction, UnObserved},
-    Automerge, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
+    Automerge, ChangeHash, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
 };
 use log;
 use pyo3::prelude::*;
@@ -12,6 +12,7 @@ use pyo3::{
     types::PyString,
 };
 use pyo3_log;
+use tracing;
 use tracing_subscriber;
 
 // The document type
@@ -349,6 +350,7 @@ pub struct DocumentTransaction {
     transaction: Arc<Mutex<TransactionHolder>>,
     obj_id: ObjId,
     commit_message: Option<String>,
+    change_hash: Option<ChangeHash>,
 }
 impl DocumentTransaction {
     fn new(
@@ -389,6 +391,7 @@ impl DocumentTransaction {
             transaction,
             obj_id,
             commit_message,
+            change_hash: None,
         };
         match ty {
             ObjType::Map | ObjType::Table => {
@@ -444,8 +447,8 @@ impl DocumentTransaction {
             tx.with_transaction_mut(|tx| {
                 let tx = tx.take().unwrap();
                 if let Some(msg) = &self.commit_message {
-                    tx.commit_with(CommitOptions::default().with_message(msg))
-                        .unwrap();
+                    self.change_hash = tx.commit_with(CommitOptions::default().with_message(msg));
+                    tracing::trace!(?self.change_hash, "commiting tx");
                 } else {
                     tx.commit();
                 }
@@ -462,6 +465,18 @@ impl DocumentTransaction {
         with_transaction! {self, |tx| {
             PyResult::Ok(tx.length(self.obj_id.clone()))
         }}
+    }
+
+    fn get_change(&self) -> PyResult<Option<Change>> {
+        if let Some(hash) = self.change_hash {
+            with_doc!(self, |doc| {
+                PyResult::Ok(doc.get_change_by_hash(&hash).map(|change| Change {
+                    change: change.clone(),
+                }))
+            })
+        } else {
+            PyResult::Ok(None)
+        }
     }
 }
 

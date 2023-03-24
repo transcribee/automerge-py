@@ -17,6 +17,7 @@ ouroboros = "0.15.6"
 pyo3-log = "*"
 log = "*"
 tracing-subscriber = "0.3"
+tracing = "0.1.37"
 
 [dependencies.pyo3]
 version = "0.18.1"

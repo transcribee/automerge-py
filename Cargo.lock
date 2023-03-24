@@ -69,6 +69,7 @@ dependencies = [
  "ouroboros",
  "pyo3",
  "pyo3-log",
+ "tracing",
  "tracing-subscriber",
 ]
 
