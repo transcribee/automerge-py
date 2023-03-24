@@ -12,6 +12,7 @@ use pyo3::{
     types::PyString,
 };
 use pyo3_log;
+use std::convert::TryInto;
 use tracing;
 use tracing_subscriber;
 
@@ -234,10 +235,18 @@ impl Mapping {
 // Maybe thats faster...
 #[pymethods]
 impl Sequence {
-    fn __getitem__(slf: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<PyObject> {
+    fn __getitem__(slf: PyRef<'_, Self>, py: Python<'_>, mut index: isize) -> PyResult<PyObject> {
         let super_ = slf.as_ref();
         with_doc! {super_, |doc| {
             let length = doc.length(super_.obj_id.clone());
+            if index < 0 {
+                let isize_length: isize = length.try_into().unwrap();
+                index = index + isize_length;
+            }
+            if index < 0 {
+                return Err(PyIndexError::new_err(format!("index out of range")))
+            }
+            let index: usize = index.try_into().unwrap();
             if index < length {
                 read_value(py, doc, super_.obj_id.clone(), index, |ty, obj_id| {
                     Ok(Document::for_subfield(py, doc, super_.automerge.clone(), ty, obj_id)?.into_py(py))
@@ -583,10 +592,22 @@ pub struct SequenceTransaction;
 // - append, clear, extend, index, count, insert, pop, remove, reverse?
 #[pymethods]
 impl SequenceTransaction {
-    fn __getitem__(slf: PyRefMut<'_, Self>, py: Python<'_>, index: usize) -> PyResult<PyObject> {
+    fn __getitem__(
+        slf: PyRefMut<'_, Self>,
+        py: Python<'_>,
+        mut index: isize,
+    ) -> PyResult<PyObject> {
         let super_ = slf.as_ref();
         with_transaction! {super_, |tx| {
             let length = tx.length(super_.obj_id.clone());
+            if index < 0 {
+                let isize_length: isize = length.try_into().unwrap();
+                index = index + isize_length;
+            }
+            if index < 0 {
+                return Err(PyIndexError::new_err(format!("index out of range")))
+            }
+            let index: usize = index.try_into().unwrap();
             if index < length {
                 read_value(py, tx, super_.obj_id.clone(), index, |ty, obj_id| {
                     Ok(DocumentTransaction::for_subfield(py, super_.automerge.clone(), super_.transaction.clone(), ty, obj_id, None)?.into_py(py))
