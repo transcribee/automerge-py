@@ -450,7 +450,8 @@ impl DocumentTransaction {
                     self.change_hash = tx.commit_with(CommitOptions::default().with_message(msg));
                     tracing::trace!(?self.change_hash, "commiting tx");
                 } else {
-                    tx.commit();
+                    self.change_hash = tx.commit();
+                    tracing::trace!(?self.change_hash, "commiting tx");
                 }
             });
         }
