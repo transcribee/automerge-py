@@ -5,12 +5,15 @@ use automerge::{
     Automerge, ChangeHash, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
 };
 use log;
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyMapping, PySequence, PySlice};
+use pyo3::{
+    exceptions,
+    types::{PyBytes, PyMapping, PySequence, PySlice},
+};
 use pyo3::{
     exceptions::{PyException, PyIndexError, PyTypeError, PyValueError},
     types::PyString,
 };
+use pyo3::{prelude::*, AsPyPointer};
 use pyo3_log;
 use std::convert::TryInto;
 use tracing;
@@ -784,7 +787,7 @@ macro_rules! match_value {
     ) => {
         use AutomergeValue::*;
         match_value!(
-            @gen_arms, $value, $scalar, $scalar_handler, Bytes, Str, Int, Uint, F64, Counter, Boolean : rest, {
+            @gen_arms, $value, $scalar, $scalar_handler, Bytes, Str, Int, Uint, F64, Counter, Boolean, Null : rest, {
                 match_value!(@gen_arms, rest, $sequence, $sequence_handler, Sequence : rest, {
                     match_value!(@gen_arms, rest, $mapping, $mapping_handler, Mapping : rest, {
                         match_value!(@gen_arms, rest, $text, $text_handler, Text : _rest, {
@@ -812,6 +815,25 @@ impl<'a> From<PyBytesNT<'a>> for ScalarValue {
     }
 }
 
+#[derive(Debug)]
+struct None {}
+
+impl<'a> FromPyObject<'a> for None {
+    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+        if obj.as_ptr() == unsafe { pyo3::ffi::Py_None() } {
+            Ok(None {})
+        } else {
+            return Err(PyException::new_err("None is not None"));
+        }
+    }
+}
+
+impl From<None> for ScalarValue {
+    fn from(counter: None) -> ScalarValue {
+        ScalarValue::Null
+    }
+}
+
 // TODO(robin): allow arbitrary things and use .__dict__?
 // These are the values we support for conversion into Automerge values
 #[derive(Debug, FromPyObject)]
@@ -826,6 +848,7 @@ enum AutomergeValue<'a> {
     Bytes(PyBytesNT<'a>),
     Mapping(&'a PyMapping),
     Sequence(&'a PySequence),
+    Null(None),
 }
 
 // This converts from a python value to a Automerge value and creates the appropriate transaction to write that value to the document
