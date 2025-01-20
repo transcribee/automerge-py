@@ -7,7 +7,6 @@ use automerge::{
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError, PyValueError};
 use pyo3::types::{PyBytes, PyMapping, PySequence, PySlice};
 use pyo3::{prelude::*, AsPyPointer};
-use pyo3_log;
 use std::convert::TryInto;
 use tracing;
 use tracing_subscriber;
@@ -1080,7 +1079,7 @@ impl From<AutomergeError> for PyErr {
 // }
 
 #[pymodule]
-#[pyo3(name = "automerge_backend")]
+#[pyo3(name = "_backend")]
 fn _backend(_py: Python, m: &PyModule) -> PyResult<()> {
     tracing_subscriber::fmt::init();
 

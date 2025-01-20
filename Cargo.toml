@@ -1,27 +1,19 @@
 [package]
-name = "automerge-python"
+name = "automerge"
 version = "0.1.1"
 authors = ["Alex Good <alex@memoryandthought.me>"]
 edition = "2018"
 rust-version = "1.65.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-name = "automerge_backend"
+name = "_backend"
 crate-type = ["cdylib"]
 
 [dependencies]
 automerge = "^0.5.7"
 ouroboros = "0.18.3"
-pyo3-log = "*"
-log = "*"
 tracing-subscriber = "0.3"
 tracing = "0.1.40"
 
 [dependencies.pyo3]
 version = "0.20.3"
-features = ["extension-module"]
-
-[package.metadata.maturin]
-name = "automerge._backend"
