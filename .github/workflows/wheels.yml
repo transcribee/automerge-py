@@ -22,18 +22,19 @@ jobs:
           submodules: true
 
       - name: set up rust
-        if: matrix.os != 'ubuntu-latest'
         run: >
           curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=stable --profile=minimal -y &&
           rustup show
 
-      - run: rustup target add aarch64-apple-darwin
+      - run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
         if: matrix.os == 'macos-latest'
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.12.3
         env:
-          CIBW_ARCHS_MACOS: "universal2"
+          CIBW_ARCHS_MACOS: "arm64 universal2"
           CIBW_ARCHS_LINUX: "auto64"
           CIBW_BUILD: ${{matrix.pyver}}-*
           CIBW_BEFORE_BUILD_LINUX: >
