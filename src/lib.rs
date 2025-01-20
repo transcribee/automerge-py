@@ -1,18 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use automerge::{
-    transaction::{CommitOptions, Transactable, Transaction, UnObserved},
+    transaction::{CommitOptions, Transactable, Transaction},
     Automerge, ChangeHash, ObjId, ObjType, Prop, ReadDoc, ScalarValue, Value,
 };
-use log;
-use pyo3::{
-    exceptions,
-    types::{PyBytes, PyMapping, PySequence, PySlice},
-};
-use pyo3::{
-    exceptions::{PyException, PyIndexError, PyTypeError, PyValueError},
-    types::PyString,
-};
+use pyo3::exceptions::{PyException, PyIndexError, PyTypeError, PyValueError};
+use pyo3::types::{PyBytes, PyMapping, PySequence, PySlice};
 use pyo3::{prelude::*, AsPyPointer};
 use pyo3_log;
 use std::convert::TryInto;
@@ -339,7 +332,7 @@ pub fn transaction(
 }
 
 // TODO(robin): Support observers. Currently we don't support observers
-type Tx<'a> = Transaction<'a, UnObserved>;
+type Tx<'a> = Transaction<'a>;
 
 // The transaction needs a mutable reference to the Document.
 // To stick the transaction into a struct and export it to python we need a self referential struct
@@ -448,7 +441,12 @@ impl DocumentTransaction {
         }
     }
 
-    fn __exit__(&mut self, ty: Option<&PyAny>, _value: &PyAny, _traceback: &PyAny) -> PyResult<()> {
+    fn __exit__(
+        &mut self,
+        ty: Option<&PyAny>,
+        _value: Option<&PyAny>,
+        _traceback: Option<&PyAny>,
+    ) -> PyResult<()> {
         let mut tx = self
             .transaction
             .lock()
@@ -459,10 +457,11 @@ impl DocumentTransaction {
             tx.with_transaction_mut(|tx| {
                 let tx = tx.take().unwrap();
                 if let Some(msg) = &self.commit_message {
-                    self.change_hash = tx.commit_with(CommitOptions::default().with_message(msg));
+                    (self.change_hash, ..) =
+                        tx.commit_with(CommitOptions::default().with_message(msg));
                     tracing::trace!(?self.change_hash, "commiting tx");
                 } else {
-                    self.change_hash = tx.commit();
+                    (self.change_hash, ..) = tx.commit();
                     tracing::trace!(?self.change_hash, "commiting tx");
                 }
             });
@@ -655,7 +654,7 @@ impl SequenceTransaction {
                                 // we insert dummy values for the new sequence
                                 // for step != 1, we simply replace the values
                                 if slice.step == 1 {
-                                    tx.splice(super_.obj_id.clone(), slice.start as usize, slice.slicelength as usize, std::iter::repeat(ScalarValue::Null).take(sequence_len)).map_err(AutomergeError::AutomergeError)?;
+                                    tx.splice(super_.obj_id.clone(), slice.start as usize, slice.slicelength, std::iter::repeat(ScalarValue::Null).take(sequence_len)).map_err(AutomergeError::AutomergeError)?;
                                 }
 
                                 // now simply write the values
@@ -727,7 +726,7 @@ impl TextTransaction {
                     // TODO(robin): do we get unicode length mismatch here?
                     // (python str.len() vs automerge str length)
                     // also python index vs rust index
-                    Ok(tx.splice_text(super_.obj_id.clone(), index, value_len, value).map_err(AutomergeError::AutomergeError)?)
+                    Ok(tx.splice_text(super_.obj_id.clone(), index, value_len as isize, value).map_err(AutomergeError::AutomergeError)?)
                 },
                 SliceOrIndex::Slice(slice) => {
                     let length = tx.length(super_.obj_id.clone());
@@ -746,7 +745,7 @@ impl TextTransaction {
                             tx.splice_text(
                                 super_.obj_id.clone(),
                                 slice.start as usize,
-                                slice.slicelength as usize,
+                                slice.slicelength,
                                 value
                             ).map_err(AutomergeError::AutomergeError)?;
                         } else {
@@ -1081,6 +1080,7 @@ impl From<AutomergeError> for PyErr {
 // }
 
 #[pymodule]
+#[pyo3(name = "automerge_backend")]
 fn _backend(_py: Python, m: &PyModule) -> PyResult<()> {
     tracing_subscriber::fmt::init();
 
